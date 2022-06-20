@@ -1,0 +1,6 @@
+#Add new UE
+curl -X PUT -H "Content-Type: application/json" -d @ue_info.json http://192.168.22.200/nudr-dr/v2/subscription-data/208950000000051/authentication-data/authentication-subscription
+
+#Delete an existing UE
+curl -X DELETE  http://192.168.22.200/nudr-dr/v2/subscription-data/208950000000051/authentication-data/authentication-subscription
+          

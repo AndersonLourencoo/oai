@@ -1,0 +1,91 @@
+****** Instructions on how to compile and run the RAN from source for the hands-on training ******
+
+This has been validated with Ubuntu 18.04 and Ubuntu 20.04. Other distributions, such as Fedora, should work. Note that the CN does not work with Fedora.
+
+To avoid any problems, we expressly recommend the use of a physical machine, i.e., NO virtual machine.
+
+This tutorial should be done before the hands-on training, i.e., at least you should install the RAN dependencies and compile it, as this takes some time.
+
+
+# Step 1: Restart CN
+
+From `Readme.cn`:
+
+```
+$ docker-compose -f docker-compose-5gcn-basic.yaml down
+$ docker-compose -f docker-compose-5gcn-basic.yaml up -d
+```
+
+
+# Step 2: Install RAN dependencies, and compile from source
+
+Clone the openairinterface5g repository, then build the gNB and UE. Note that the repo is large and cloning might take a while.
+
+```
+$ cd 
+$ git clone https://gitlab.eurecom.fr/oai/openairinterface5g.git
+$ cd openairinterface5g/cmake_targets
+$ git checkout develop
+$ ./build_oai -I                               # install dependencies
+$ ./build_oai --ninja --gNB --nrUE -w SIMU     # compile gNB and nrUE
+```
+
+
+# Step 3: Run the gNB and verify it is connected to the RAN
+
+Run Wireshark and capture NGAP traffic. Then, start the gNB:
+
+```
+$ cd ~/openairinterface5g/cmake_targets/ran_build/build
+$ sudo -E RFSIMULATOR=server ./nr-softmodem --rfsim --sa -O ~/oai_hand_on_session/gnb.sa.band78.fr1.106PRB.usrpb210.conf
+````
+
+Verify that the gNB connected to the AMF by inspecting its logs
+```
+$ docker logs demo-oai-amf
+```
+
+Or check that you see the NGAP Setup Request and Response messages in Wireshark.
+
+
+# Step 4: 
+
+Run the nrUE from a second terminal:
+
+```
+$ cd ~/openairinterface5g/cmake_targets/ran_build/build
+$ sudo -E RFSIMULATOR=127.0.0.1 ./nr-uesoftmodem -r 106 --numerology 1 --band 78 -C 3619200000 --rfsim --sa --nokrnmod -O ~/oai_hand_on_session/ue.conf
+```
+
+Verify that it is connected: you should see the following output at gNB:
+```
+[NR_RRC]   [gNB 0] Frame  0 : Logical Channel UL-DCCH, Received NR_RRCReconfigurationComplete from UE rnti a248, reconfiguring DRB 1
+[NR_RRC]   gnb_gtp_addr (msg index 0, pdu_sessions index 0, status 2, xid 1): nb_of_pdusessions 1,  pdusession_id 10, teid: 786179347
+ [NR_RRC]   NGAP_PDUSESSION_SETUP_RESP: sending the message: nb_of_pdusessions 1, total pdu_sessions 1, index 1
+[NGAP]   PDUSESSIONSetup successful message
+```
+and nrUE:
+```
+[NAS]   Received PDU Session Establishment Accept, UE IP: 12.1.1.130
+[OIP]   Interface oaitun_ue1 successfully configured, ip address 12.1.1.130, mask 255.255.255.0 broadcast address 12.1.1.255
+```
+
+Correspondingly, an interface should have been brought up:
+```
+51: oaitun_ue1: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UNKNOWN group default qlen 500
+    link/none
+    inet 12.1.1.129/24 brd 12.1.1.255 scope global oaitun_ue1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5c44:5953:32ab:a130/64 scope link stable-privacy
+       valid_lft forever preferred_lft forever
+```
+
+If you run it multiple times, the IP will change: 129 -> 130 -> 131...
+
+
+# Step 5: Connectivity test
+
+As in the `Readme.cn`, you can make a connectivity test: from the UE
+```
+ping -I oaitun_ue1 -c 10 192.168.22.203
+```

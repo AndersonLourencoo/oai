@@ -1,0 +1,177 @@
+****** Instructions on how to deploy the 5G Core Network with OAI RF Simulator/gNBSIM using Docker-Compose ******
+This instructions have been validated with Ubuntu 18.04 and Ubuntu 20.04. 
+
+*** Step 1: Prerequisites ***
+These are the prerequisites to setting up an end-to-end OAI setup for 5G SA.
+
+** Docker **
+Please follow the instructions (https://docs.docker.com/engine/install/ubuntu/) to install docker (e.g., version: 5:20.10.16~3-0~ubuntu-focal)
+
+** Docker-Compose **
+$ sudo curl -L https://github.com/docker/compose/releases/download/1.29.2/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+$ sudo chmod +x /usr/local/bin/docker-compose
+
+NOTE: Do not forget to add your username to the docker group.
+Please refer to this link https://docs.docker.com/engine/install/linux-postinstall/ for more information (you may need to restart your computer to apply this change)
+
+$ sudo usermod -a -G docker YOUR_USER_NAME
+
+** Wireshark (Optional) **
+The new version of wireshark may not be available in the ubuntu repository, you may use the developer PPA:
+
+$ sudo add-apt-repository ppa:wireshark-dev/stable
+$ sudo apt update
+$ sudo apt install wireshark
+
+# Verify Wireshark version
+$ wireshark --version
+```
+Wireshark 3.6.5 (Git v3.6.5 packaged as 3.6.5-1~ubuntu20.04.0+wiresharkdevstable)
+```
+
+# Verify if computer can work with RFSimulator (need avx2 support), if not we can still test with gNBSim
+lscpu | grep avx2
+ 
+** Network configuration **
+To be able to test an end-to-end connectivity, enable packet forwarding in the host machine
+
+$ sudo sysctl net.ipv4.conf.all.forwarding=1
+$ sudo iptables -P FORWARD ACCEPT
+
+*** Step 2: Get the CN images from the OAI official DockerHub ***
+#Note: You may need to create an account and login to DockerHub
+
+#Login with your Docker ID to pull images from Docker Hub
+$ docker login
+
+#Then pull the images
+$ docker pull mysql:5.7
+$ docker pull ubuntu:bionic
+
+$ docker pull oaisoftwarealliance/oai-amf:develop
+$ docker pull oaisoftwarealliance/oai-nrf:develop
+$ docker pull oaisoftwarealliance/oai-smf:develop
+$ docker pull oaisoftwarealliance/oai-spgwu-tiny:develop
+$ docker pull oaisoftwarealliance/oai-ausf:develop
+$ docker pull oaisoftwarealliance/oai-udm:develop
+$ docker pull oaisoftwarealliance/oai-udr:develop
+
+#Re-tag the images
+$ docker image tag oaisoftwarealliance/oai-amf:develop oai-amf:develop
+$ docker image tag oaisoftwarealliance/oai-nrf:develop oai-nrf:develop
+$ docker image tag oaisoftwarealliance/oai-smf:develop oai-smf:develop
+$ docker image tag oaisoftwarealliance/oai-spgwu-tiny:develop oai-spgwu-tiny:develop
+$ docker image tag oaisoftwarealliance/oai-ausf:develop oai-ausf:develop
+$ docker image tag oaisoftwarealliance/oai-udm:develop oai-udm:develop
+$ docker image tag oaisoftwarealliance/oai-udr:develop oai-udr:develop 
+
+*** Step 3: Build OAI RF Simulator ***
+There are two options for OAI gNB RFSimulator: you can get the OAI gNB/UE official images from Docker Hub, then use docker-compose to launch gNB/UE or build from source code (as will be done in the RAN session)
+
+#Get OAI gNB/UE images from Docker hub
+$ docker pull oaisoftwarealliance/oai-gnb:develop
+$ docker pull oaisoftwarealliance/oai-nr-ue:develop
+
+#Re-tag the images
+$ docker image tag oaisoftwarealliance/oai-gnb:develop oai-gnb:develop
+$ docker image tag oaisoftwarealliance/oai-nr-ue:develop oai-nr-ue:develop
+
+*** Step 4: Get the gNBSIM image (to test with gNBSIM) ***
+
+$ docker pull rohankharade/gnbsim
+$ docker image tag rohankharade/gnbsim:latest gnbsim:latest
+
+*** Optional ***
+#Logout Docker Hub
+$ docker logout
+
+*** Step 5: Deploy OAI Basic Funtional Core Network ***
+
+ 						NRF 	SMF	       AUSF 	  UDM	    UDR ----- MySQL
+ 						|	  |		|	   |	     |		
+ 						|	  |		|	   |	     |				
+ 						|	  |		|	   |	     |				
+			             --------------------------------------------------------------------
+					|			 |	 |
+					|			 |	 |		
+					|			 |	 |		
+		      OAI NR UE --- OAI gNB ------ N1/N2 ----- AMF     |
+					|			 	 |	
+					|-------------------N3-------- UPF(SPGWU)
+							
+
+----------------------------------------------------------------------------------------------------
+** Before starting this demo, you should be in the current directory to execute the following commands
+
+$ cd oai_hand_on_session
+
+#NOTE: you can also start wireshark in another terminal to capture all the packets exchanged between gNB
+and 5G CN components (interface: demo-public, filter: icmp or http or pfcp or sctp)
+----------------------------------------------------------------------------------------------------
+
+# deploy core network
+$ docker-compose -f docker-compose-5gcn-basic.yaml up -d
+
+# Check if CN is in running and healthy state
+$ docker-compose -f docker-compose-5gcn-basic.yaml ps -a
+
+#NOTE: you can check the updated status of all availabe NFs in a new terminal by using
+$ watch -n 1 docker ps -a
+
+# Deploy OAI gNB in RF simulator mode
+$ docker-compose -f docker-compose-oai-rfsimulator.yaml up -d oai-gnb
+
+# Check if OAI gNB is in running and healthy state
+$ docker-compose -f docker-compose-oai-rfsimulator.yaml ps -a
+
+# Verify if gNB connects to the AMF
+$ docker logs demo-oai-amf
+
+#Deploy OAI NR-UE in RF simulator mode
+
+$ docker-compose -f docker-compose-oai-rfsimulator.yaml up -d oai-nr-ue
+
+# Making sure the OAI UE is connected:
+$  docker exec -it rfsim5g-oai-nr-ue /bin/bash
+root@bb4d400a832d:/opt/oai-nr-ue# ifconfig 
+you should see something like this
+```
+oaitun_ue1: flags=4305<UP,POINTOPOINT,RUNNING,NOARP,MULTICAST>  mtu 1500
+        inet xxx.xxx.xxx.xxx  netmask 255.255.255.0  destination 12.1.1.129
+        unspec 00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00  txqueuelen 500  (UNSPEC)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+```        
+
+** example command to check logs:
+$ docker logs CONTAINER_NAME
+
+You can also connect gNBSim at the same time to AMF
+docker-compose -f docker-compose-gnbsim.yaml up -d demo_gnbsim
+
+** Again wait until it becomes HEALTHY using following command
+$ docker-compose -f docker-compose-gnbsim.yaml ps -a
+
+*** Test with traffic ***
+# Ping to/from ext-dn (192.168.22.203)
+$ docker exec -it rfsim5g-oai-nr-ue /bin/bash
+root@bb4d400a832d:/opt/oai-nr-ue# ping -I oaitun_ue1 -c 10 192.168.22.203
+
+# Ping from oai-ext-dn to OAI UE for downlink traffic (for Option 1/2 and gNBSim)
+$ docker exec -it demo-oai-ext-dn ping UE_IP_ADDRESS
+
+# Check internet connectivity (may need to configure your DNS)
+$ docker exec -it rfsim5g-oai-nr-ue /bin/bash
+root@bb4d400a832d:/opt/oai-nr-ue# ping -I oaitun_ue1 -c 10 google.com
+
+#For gNBSim:
+$ docker exec demo-gnbsim ping google.com -I UE_IP_ADDR -c 10
+
+# Don't forget to bring OAI RFSimulator/gNBSim down for the next lab
+$ docker-compose -f docker-compose-oai-rfsimulator.yaml down
+$ docker-compose -f docker-compose-gnbsim.yaml down
+
+#NOTE: In the `pcap folder` you will find pcaps which we have taken from deploying the core network to connecting gNBSIM/UERANSIM/OAI RFSimulator. We suggest that you have a look at that folder to understand what happens at packet level when core network is deployed and UE and gNB simulator is connected. 
+
